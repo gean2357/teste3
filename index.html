@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Air Draw - Dennis Secure Login</title>
+  <title>Air Draw - Dennis Login Corrigido</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { position: absolute; top: 0; left: 0; }
@@ -17,7 +17,7 @@
 <body>
   <div id="ui">
     <b>Dennis - Login Biométrico</b><br>
-    👉 Passe o indicador 2x sobre os círculos<br>
+    👉 Passe o indicador 2x sobre os círculos verdes<br>
     🔒 Senha: <span id="pass-display">____</span><br>
     ⌨️ Espaço: Limpa tudo
   </div>
@@ -38,20 +38,11 @@
     let currentPass = "";
     const targetPass = "0001";
 
-    // Configuração do Teclado Redondo e Centralizado
     const keys = [];
-    const radius = 45; // Tamanho maior
-    const cols = 5;    // 5 colunas para ficar centralizado
+    const radius = 45; 
     
     for(let i=0; i<10; i++) {
-        keys.push({
-            label: i.toString(),
-            // Posicionamento abaixo do centro
-            x: 0, // Será calculado no onResults baseado no tamanho da tela
-            y: 0,
-            hits: 0,
-            lastHitTime: 0
-        });
+        keys.push({ label: i.toString(), hits: 0, lastHitTime: 0, x: 0, y: 0 });
     }
 
     function getDistance(p1, p2) {
@@ -59,16 +50,19 @@
     }
 
     function onResults(handResults, faceResults) {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      canvasElement.width = w;
-      canvasElement.height = h;
+      canvasElement.width = window.innerWidth;
+      canvasElement.height = window.innerHeight;
+      const w = canvasElement.width;
+      const h = canvasElement.height;
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, w, h);
+      
+      // ESPELHAMENTO
       canvasCtx.translate(w, 0);
       canvasCtx.scale(-1, 1);
       
+      // DESENHA O VÍDEO NO FUNDO (Importante para não ficar preto)
       if (handResults.image) {
         canvasCtx.drawImage(handResults.image, 0, 0, w, h);
       }
@@ -84,12 +78,11 @@
         }
       }
 
-      // 2. DESENHA O TECLADO REDONDO (CENTRALIZADO)
+      // 2. DESENHA O TECLADO REDONDO (CENTRALIZADO EM BAIXO)
       keys.forEach((key, i) => {
-          // Ajusta posição dinamicamente (2 linhas de 5 números)
           const row = Math.floor(i / 5);
           const col = i % 5;
-          key.x = (w / 2) - (2.5 * 110) + (col * 110) + 55;
+          key.x = (w / 2) - (2 * 110) + (col * 110);
           key.y = (h / 2) + 100 + (row * 110);
 
           canvasCtx.beginPath();
@@ -100,6 +93,7 @@
           canvasCtx.fill();
           canvasCtx.stroke();
           
+          // Texto do número
           canvasCtx.save();
           canvasCtx.scale(-1, 1);
           canvasCtx.fillStyle = "white";
@@ -118,7 +112,6 @@
           const x = indexTip.x * w;
           const y = indexTip.y * h;
           
-          // Colisão com Círculos
           keys.forEach(key => {
               const distToKey = Math.sqrt(Math.pow(x - key.x, 2) + Math.pow(y - key.y, 2));
               if (distToKey < radius) {
@@ -126,12 +119,10 @@
                   if (now - key.lastHitTime > 700) { 
                       key.hits++;
                       key.lastHitTime = now;
-                      
                       if (key.hits >= 2) {
                           currentPass += key.label;
                           document.getElementById('pass-display').innerText = "*".repeat(currentPass.length);
                           key.hits = 0; 
-                          
                           if (currentPass.length === 4) {
                               if (currentPass === targetPass) {
                                   window.location.href = "https://www.youtube.com";
@@ -148,8 +139,7 @@
 
           // Desenho (Pinça)
           const thumbTip = landmarks[4];
-          const distPinca = getDistance(thumbTip, indexTip);
-          if (distPinca < 0.05) {
+          if (getDistance(thumbTip, indexTip) < 0.05) {
             points.push({x, y});
           } else if (points.length > 0 && points[points.length-1] !== null) {
             points.push(null);
@@ -157,12 +147,18 @@
         }
       }
 
-      // 4. DESENHA O RASTRO
+      // 4. DESENHA O RASTRO DO DESENHO
       canvasCtx.beginPath();
       canvasCtx.lineWidth = 6;
-      canvasCtx.strokeStyle = "#00FF00"; // Desenho agora também é verde
+      canvasCtx.lineCap = "round";
+      canvasCtx.strokeStyle = "#00FF00";
+      for (let i = 1; i < points.length; i++) {
+        if (points[i] && points[i-1]) {
+          canvasCtx.moveTo(points[i-1].x, points[i-1].y);
+          canvasCtx.lineTo(points[i].x, points[i].y);
+        }
+      }
       canvasCtx.stroke();
-      
       canvasCtx.restore();
     }
 

@@ -1,37 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Air Draw - Escrita no Ar</title>
+  <title>Air Draw - Hand Skeleton</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { position: absolute; top: 0; left: 0; }
-    video { transform: scaleX(-1); width: 100vw; height: 100vh; object-fit: cover; opacity: 0.5; }
+    video { transform: scaleX(-1); width: 100vw; height: 100vh; object-fit: cover; }
     #ui { 
       position: absolute; top: 20px; left: 20px; 
       color: white; font-family: sans-serif; z-index: 10;
-      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
+      background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
     }
   </style>
 </head>
 <body>
   <div id="ui">
-    Vá para um lugar iluminado!<br>
-    <b>Dedo indicador:</b> Desenha<br>
-    <b>Feche a mão:</b> Para de desenhar<br>
-    <b>Pressione ESPAÇO:</b> Limpa a tela
+    <b>Status:</b> Mostrando Esqueleto da Mão<br>
+    <b>Dedo Indicador:</b> Desenha no ar<br>
+    <b>Espaço:</b> Limpa o desenho
   </div>
   <video id="webcam" autoplay playsinline style="display:none;"></video>
   <canvas id="output_canvas"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
   <script>
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
     
-    // Lista para guardar os pontos do desenho
     let points = []; 
 
     function onResults(results) {
@@ -39,52 +38,50 @@
       canvasElement.height = window.innerHeight;
 
       canvasCtx.save();
-      // Limpa a tela a cada frame
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       
-      // Desenha o vídeo espelhado no fundo
+      // Espelhamento para parecer um espelho
       canvasCtx.translate(canvasElement.width, 0);
       canvasCtx.scale(-1, 1);
+      
+      // Desenha o vídeo no fundo
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0];
-        
-        // Ponto 8 (Indicador) e Ponto 4 (Polegar) para detectar pinça ou proximidade
-        const indexTip = landmarks[8];
-        const x = indexTip.x * canvasElement.width;
-        const y = indexTip.y * canvasElement.height;
+      if (results.multiHandLandmarks) {
+        for (const landmarks of results.multiHandLandmarks) {
+          
+          // 1. DESENHA O ESQUELETO (Linhas e Pontos)
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS,
+                        {color: '#00FF00', lineWidth: 5});
+          drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
 
-        // Adiciona o ponto atual à lista de desenho
-        points.push({x, y});
+          // 2. LOGICA DO DESENHO (Dedo Indicador - Ponto 8)
+          const indexTip = landmarks[8];
+          const x = indexTip.x * canvasElement.width;
+          const y = indexTip.y * canvasElement.height;
+          points.push({x, y});
+        }
+      }
 
-        // Desenha a pontinha do dedo (o "lápis")
+      // 3. DESENHA O RASTRO ACUMULADO (Azul Neon)
+      if (points.length > 1) {
         canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 8, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = "#fff";
+        canvasCtx.lineWidth = 8;
+        canvasCtx.lineCap = "round";
+        canvasCtx.strokeStyle = "#00BFFF";
         canvasCtx.shadowBlur = 15;
-        canvasCtx.shadowColor = "#00ffff";
-        canvasCtx.fill();
-      }
+        canvasCtx.shadowColor = "#00BFFF";
 
-      // DESENHA O RASTRO ACUMULADO
-      canvasCtx.beginPath();
-      canvasCtx.lineWidth = 5;
-      canvasCtx.lineCap = "round";
-      canvasCtx.strokeStyle = "#00ffff"; // Cor Neon
-      canvasCtx.shadowBlur = 10;
-      canvasCtx.shadowColor = "#00ffff";
-
-      for (let i = 1; i < points.length; i++) {
-        canvasCtx.moveTo(points[i-1].x, points[i-1].y);
-        canvasCtx.lineTo(points[i].x, points[i].y);
+        for (let i = 1; i < points.length; i++) {
+          canvasCtx.moveTo(points[i-1].x, points[i-1].y);
+          canvasCtx.lineTo(points[i].x, points[i].y);
+        }
+        canvasCtx.stroke();
       }
-      canvasCtx.stroke();
       
       canvasCtx.restore();
     }
 
-    // Comando para limpar a tela com a tecla Espaço
     window.addEventListener('keydown', (e) => {
       if(e.code === 'Space') points = [];
     });
@@ -94,10 +91,10 @@
     });
 
     hands.setOptions({
-      maxNumHands: 1,
+      maxNumHands: 2, // Agora detecta até 2 mãos
       modelComplexity: 1,
-      minDetectionConfidence: 0.7, // Aumentei a confiança para evitar falhas
-      minTrackingConfidence: 0.7
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
     });
 
     hands.onResults(onResults);

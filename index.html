@@ -1,26 +1,48 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-  <title>Air Draw - Face Mesh & Hand Tracking</title>
+  <meta charset="UTF-8">
+  <title>Dennis Vision - IA Multifuncional</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; }
-    canvas { position: absolute; top: 0; left: 0; }
-    video { transform: scaleX(-1); width: 100vw; height: 100vh; object-fit: cover; }
-    #ui { 
-      position: absolute; top: 20px; left: 20px; 
-      color: white; font-family: sans-serif; z-index: 10;
-      background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+    body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    canvas { position: absolute; top: 0; left: 0; z-index: 1; }
+    video { transform: scaleX(-1); width: 100vw; height: 100vh; object-fit: cover; display: none; }
+    
+    #controls {
+      position: absolute; top: 20px; left: 20px; z-index: 10;
+      background: rgba(0, 0, 0, 0.85); color: #00ffcc;
+      padding: 20px; border-radius: 12px; border: 1px solid #00ffcc;
+      box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
     }
+    
+    .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+    button {
+      background: #222; color: #fff; border: 1px solid #444;
+      padding: 8px 12px; cursor: pointer; border-radius: 4px; transition: 0.3s;
+    }
+    button.active { background: #00ffcc; color: #000; border-color: #00ffcc; }
+    button:hover { background: #333; }
+    
+    .status-msg { font-size: 0.85em; margin-top: 10px; color: #aaa; }
   </style>
 </head>
 <body>
-  <div id="ui">
-    <b>Dennis, teste os novos recursos:</b><br>
-    👉 <b>Desenhar:</b> Una o polegar e o indicador (Pinça)<br>
-    🖐️ <b>Parar:</b> Afaste os dedos ou feche a mão<br>
-    ⌨️ <b>Espaço:</b> Limpa o desenho
+
+  <div id="controls">
+    <strong>SISTEMA DE VISÃO - DENNIS</strong>
+    <div class="btn-group">
+      <button id="btnNormal" class="active" onclick="setMode('normal')">Normal</button>
+      <button id="btnNight" onclick="setMode('night')">Infra (Noturno)</button>
+      <button id="btnThermal" onclick="setMode('thermal')">Térmico</button>
+    </div>
+    <div class="status-msg">
+      • Una Polegar e Indicador para <b>DESENHAR</b><br>
+      • Tecla <b>ESPAÇO</b> para limpar o rastro<br>
+      • Mantenha o ambiente minimamente iluminado
+    </div>
   </div>
-  <video id="webcam" autoplay playsinline style="display:none;"></video>
+
+  <video id="webcam" autoplay playsinline></video>
   <canvas id="output_canvas"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
@@ -31,103 +53,108 @@
   <script>
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output_canvas');
-    const canvasCtx = canvasElement.getContext('2d');
+    const canvasCtx = canvasElement.getContext('2d', { willReadFrequently: true });
     
+    let currentMode = 'normal';
     let points = []; 
 
-    // Função para calcular distância entre dois pontos
-    function getDistance(p1, p2) {
-      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    function setMode(mode) {
+        currentMode = mode;
+        document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+        if(mode === 'normal') document.getElementById('btnNormal').classList.add('active');
+        if(mode === 'night') document.getElementById('btnNight').classList.add('active');
+        if(mode === 'thermal') document.getElementById('btnThermal').classList.add('active');
+    }
+
+    function applyThermal(ctx, w, h) {
+        let frame = ctx.getImageData(0, 0, w, h);
+        let data = frame.data;
+        for (let i = 0; i < data.length; i += 4) {
+            let avg = (data[i] + data[i+1] + data[i+2]) / 3;
+            if (avg < 128) {
+                data[i] = 0; data[i+1] = avg * 2; data[i+2] = 255 - (avg * 2);
+            } else {
+                data[i] = (avg - 128) * 2; data[i+1] = 255 - ((avg - 128) * 2); data[i+2] = 0;
+            }
+        }
+        ctx.putImageData(frame, 0, 0);
     }
 
     function onResults(handResults, faceResults) {
-      canvasElement.width = window.innerWidth;
-      canvasElement.height = window.innerHeight;
-
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      
-      canvasCtx.translate(canvasElement.width, 0);
-      canvasCtx.scale(-1, 1);
-      
-      // Desenha o vídeo
-      if (handResults.image) {
+        canvasElement.width = window.innerWidth;
+        canvasElement.height = window.innerHeight;
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        // Espelhamento e Desenho do Vídeo
+        canvasCtx.translate(canvasElement.width, 0);
+        canvasCtx.scale(-1, 1);
         canvasCtx.drawImage(handResults.image, 0, 0, canvasElement.width, canvasElement.height);
-      }
 
-      // 1. DESENHA O ROSTO (FACE MESH)
-      if (faceResults && faceResults.multiFaceLandmarks) {
-        for (const landmarks of faceResults.multiFaceLandmarks) {
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#FF3030'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#FF3030'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#E0E0E0'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#E0E0E0'});
+        // Aplicação de Filtros de Imagem
+        if (currentMode === 'night') {
+            canvasCtx.fillStyle = "rgba(0, 255, 0, 0.2)";
+            canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.restore(); canvasCtx.save(); // Aplica brilho extra via código se necessário
+        } else if (currentMode === 'thermal') {
+            applyThermal(canvasCtx, canvasElement.width, canvasElement.height);
         }
-      }
 
-      // 2. DESENHA A MÃO E LÓGICA DE PINÇA
-      if (handResults.multiHandLandmarks) {
-        for (const landmarks of handResults.multiHandLandmarks) {
-          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
-
-          const thumbTip = landmarks[4];
-          const indexTip = landmarks[8];
-          
-          const distance = getDistance(thumbTip, indexTip);
-
-          // Se a distância for pequena (pinça), adiciona ponto ao desenho
-          if (distance < 0.05) {
-            const x = indexTip.x * canvasElement.width;
-            const y = indexTip.y * canvasElement.height;
-            points.push({x, y});
-          } else {
-            // Adiciona um ponto nulo para criar quebras no traçado quando soltar os dedos
-            if (points.length > 0 && points[points.length-1] !== null) {
-              points.push(null);
+        // 1. DESENHO DO ROSTO (Face Mesh)
+        if (faceResults.multiFaceLandmarks) {
+            for (const landmarks of faceResults.multiFaceLandmarks) {
+                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C030', lineWidth: 1});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#FFFFFF'});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#FFFFFF'});
             }
-          }
         }
-      }
 
-      // 3. DESENHA O RASTRO (Sem ligar pontos nulos)
-      canvasCtx.beginPath();
-      canvasCtx.lineWidth = 6;
-      canvasCtx.lineCap = "round";
-      canvasCtx.strokeStyle = "#00ffff";
-      canvasCtx.shadowBlur = 15;
-      canvasCtx.shadowColor = "#00ffff";
+        // 2. DESENHO DA MÃO E RASTRO
+        if (handResults.multiHandLandmarks) {
+            for (const landmarks of handResults.multiHandLandmarks) {
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FFCC', lineWidth: 2});
+                
+                const thumb = landmarks[4];
+                const index = landmarks[8];
+                const dist = Math.hypot(thumb.x - index.x, thumb.y - index.y);
 
-      for (let i = 1; i < points.length; i++) {
-        if (points[i] && points[i-1]) {
-          canvasCtx.moveTo(points[i-1].x, points[i-1].y);
-          canvasCtx.lineTo(points[i].x, points[i].y);
+                if (dist < 0.05) { // Gesto de Pinça
+                    points.push({x: index.x * canvasElement.width, y: index.y * canvasElement.height});
+                } else if (points.length > 0 && points[points.length-1] !== null) {
+                    points.push(null);
+                }
+            }
         }
-      }
-      canvasCtx.stroke();
-      
-      canvasCtx.restore();
+
+        // 3. RENDERIZAR RASTRO
+        canvasCtx.beginPath();
+        canvasCtx.lineWidth = 5;
+        canvasCtx.strokeStyle = "#00FFCC";
+        canvasCtx.shadowBlur = 10;
+        canvasCtx.shadowColor = "#00FFCC";
+        for (let i = 1; i < points.length; i++) {
+            if (points[i] && points[i-1]) {
+                canvasCtx.moveTo(points[i-1].x, points[i-1].y);
+                canvasCtx.lineTo(points[i].x, points[i].y);
+            }
+        }
+        canvasCtx.stroke();
+        canvasCtx.restore();
     }
 
-    // Configuração do Face Mesh
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
 
-    // Configuração das Mãos
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.7 });
 
-    // Sincronização dos resultados
-    let latestHandResults = {};
-    hands.onResults(results => { latestHandResults = results; });
-    faceMesh.onResults(results => { onResults(latestHandResults, results); });
+    let lastH = {};
+    hands.onResults(h => lastH = h);
+    faceMesh.onResults(f => onResults(lastH, f));
 
     const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await hands.send({image: videoElement});
-        await faceMesh.send({image: videoElement});
-      },
-      width: 1280, height: 720
+        onFrame: async () => { await hands.send({image: videoElement}); await faceMesh.send({image: videoElement}); },
+        width: 1280, height: 720
     });
     camera.start();
 

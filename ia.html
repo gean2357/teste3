@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Air Draw - Developer Way</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { position: absolute; top: 0; left: 0; }
+    video { transform: scaleX(-1); width: 100vw; height: 100vh; object-fit: cover; }
+    #ui { position: absolute; color: white; font-family: sans-serif; padding: 20px; z-index: 10; }
+  </style>
+</head>
+<body>
+  <div id="ui">Aponte o indicador para a câmera e desenhe!</div>
+  <video id="webcam" autoplay playsinline></video>
+  <canvas id="output_canvas"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    function onResults(results) {
+      // Ajusta o tamanho do canvas
+      canvasElement.width = window.innerWidth;
+      canvasElement.height = window.innerHeight;
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      
+      // Desenha o vídeo (espelhado para naturalidade)
+      canvasCtx.translate(canvasElement.width, 0);
+      canvasCtx.scale(-1, 1);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks) {
+        for (const landmarks of results.multiHandLandmarks) {
+          // Ponto 8 é a ponta do dedo indicador
+          const indexFinger = landmarks[8];
+          const x = indexFinger.x * canvasElement.width;
+          const y = indexFinger.y * canvasElement.height;
+
+          // Efeito de Brilho Neon
+          canvasCtx.beginPath();
+          canvasCtx.arc(x, y, 10, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = "#FFD700"; // Cor dourada (Ramadan style)
+          canvasCtx.shadowBlur = 20;
+          canvasCtx.shadowColor = "#FFD700";
+          canvasCtx.fill();
+        }
+      }
+      canvasCtx.restore();
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 1280,
+      height: 720
+    });
+    camera.start();
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Dennis Vision - Login Biométrico</title>
+  <title>Air Draw - Face Mesh & Hand Tracking</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { position: absolute; top: 0; left: 0; }
@@ -11,14 +11,15 @@
       color: white; font-family: sans-serif; z-index: 10;
       background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
     }
+    #pass-display { color: #00ffff; font-weight: bold; }
   </style>
 </head>
 <body>
   <div id="ui">
-    <b>Dennis - Login Biométrico</b><br>
-    👉 Passe o indicador 2x sobre os círculos verdes<br>
-    🔒 Senha: <span id="pass-display" style="color:#00FF00">____</span><br>
-    ⌨️ Espaço: Limpa tudo
+    <b>Dennis - Acesso Restrito</b><br>
+    👉 Passe o indicador 2x sobre os números<br>
+    🔒 Senha: <span id="pass-display">____</span><br>
+    ⌨️ Espaço: Limpa o desenho e a senha
   </div>
   <video id="webcam" autoplay playsinline style="display:none;"></video>
   <canvas id="output_canvas"></canvas>
@@ -36,33 +37,39 @@
     let points = []; 
     let currentPass = "";
     const targetPass = "0001";
-    const keys = [];
-    const radius = 50; // Grandes como você pediu
 
-    // Inicializa botões
+    // Configuração do Teclado Virtual (Números 0-9)
+    const keys = [];
+    const keyWidth = 60;
+    const keyHeight = 60;
     for(let i=0; i<10; i++) {
-        keys.push({ label: i.toString(), hits: 0, lastHitTime: 0 });
+        keys.push({
+            label: i.toString(),
+            x: 50 + (i * 75),
+            y: 50,
+            hits: 0,
+            lastHitTime: 0
+        });
+    }
+
+    function getDistance(p1, p2) {
+      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
     }
 
     function onResults(handResults, faceResults) {
-      // Ajusta tela
       canvasElement.width = window.innerWidth;
       canvasElement.height = window.innerHeight;
-      const w = canvasElement.width;
-      const h = canvasElement.height;
 
       canvasCtx.save();
-      canvasCtx.clearRect(0, 0, w, h);
-      
-      // 1. ESPELHAMENTO E DESENHO DA CÂMERA (FUNDO)
-      canvasCtx.translate(w, 0);
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.translate(canvasElement.width, 0);
       canvasCtx.scale(-1, 1);
       
       if (handResults.image) {
-        canvasCtx.drawImage(handResults.image, 0, 0, w, h);
+        canvasCtx.drawImage(handResults.image, 0, 0, canvasElement.width, canvasElement.height);
       }
 
-      // 2. DESENHA A FACE (A que você acha bonita)
+      // 1. DESENHA A FACE (A estética que você gosta)
       if (faceResults && faceResults.multiFaceLandmarks) {
         for (const landmarks of faceResults.multiFaceLandmarks) {
           drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
@@ -73,57 +80,45 @@
         }
       }
 
-      // 3. DESENHA O TECLADO VERDE REDONDO (CENTRALIZADO EM BAIXO)
-      keys.forEach((key, i) => {
-          const row = Math.floor(i / 5);
-          const col = i % 5;
-          // Cálculo para centralizar 5 círculos por linha
-          const startX = w / 2 - (2 * 120);
-          const x = startX + (col * 120);
-          const y = h - 250 + (row * 120); // Posicionado na parte de baixo
-
-          key.x = x;
-          key.y = y;
-
-          canvasCtx.beginPath();
-          canvasCtx.arc(x, y, radius, 0, 2 * Math.PI);
-          canvasCtx.fillStyle = key.hits > 0 ? "rgba(0, 255, 0, 0.6)" : "rgba(0, 255, 0, 0.2)";
-          canvasCtx.strokeStyle = "#00FF00";
-          canvasCtx.lineWidth = 4;
-          canvasCtx.fill();
-          canvasCtx.stroke();
+      // 2. DESENHA O TECLADO
+      keys.forEach(key => {
+          canvasCtx.fillStyle = key.hits > 0 ? "rgba(0, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)";
+          canvasCtx.strokeStyle = "#00ffff";
+          canvasCtx.lineWidth = 2;
+          canvasCtx.fillRect(key.x, key.y, keyWidth, keyHeight);
+          canvasCtx.strokeRect(key.x, key.y, keyWidth, keyHeight);
           
-          // Números
           canvasCtx.save();
           canvasCtx.scale(-1, 1);
           canvasCtx.fillStyle = "white";
-          canvasCtx.font = "bold 35px Arial";
-          canvasCtx.textAlign = "center";
-          canvasCtx.fillText(key.label, -x, y + 12);
+          canvasCtx.font = "bold 24px Arial";
+          canvasCtx.fillText(key.label, -(key.x + 38), key.y + 40);
           canvasCtx.restore();
       });
 
-      // 4. LÓGICA DAS MÃOS
+      // 3. DESENHA A MÃO E LÓGICA DE SENHA/DESENHO
       if (handResults.multiHandLandmarks) {
         for (const landmarks of handResults.multiHandLandmarks) {
           drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
 
+          const thumbTip = landmarks[4];
           const indexTip = landmarks[8];
-          const x = indexTip.x * w;
-          const y = indexTip.y * h;
+          const x = indexTip.x * canvasElement.width;
+          const y = indexTip.y * canvasElement.height;
           
-          // Colisão com botões (2 passagens)
+          // Lógica de Colisão com Teclado (2 movimentos)
           keys.forEach(key => {
-              const dist = Math.hypot(x - key.x, y - key.y);
-              if (dist < radius) {
+              if (x > key.x && x < key.x + keyWidth && y > key.y && y < key.y + keyHeight) {
                   const now = Date.now();
-                  if (now - key.lastHitTime > 700) { 
+                  if (now - key.lastHitTime > 600) { 
                       key.hits++;
                       key.lastHitTime = now;
+                      
                       if (key.hits >= 2) {
                           currentPass += key.label;
                           document.getElementById('pass-display').innerText = "*".repeat(currentPass.length);
                           key.hits = 0; 
+                          
                           if (currentPass.length === 4) {
                               if (currentPass === targetPass) {
                                   window.location.href = "https://www.youtube.com";
@@ -138,22 +133,26 @@
               }
           });
 
-          // Rastro do Desenho (Pinça)
-          const thumbTip = landmarks[4];
-          const d = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-          if (d < 0.05) {
+          // Lógica de Desenho (Pinça)
+          const distance = getDistance(thumbTip, indexTip);
+          if (distance < 0.05) {
             points.push({x, y});
-          } else if (points.length > 0 && points[points.length-1] !== null) {
-            points.push(null);
+          } else {
+            if (points.length > 0 && points[points.length-1] !== null) {
+              points.push(null);
+            }
           }
         }
       }
 
-      // 5. DESENHA O TRAÇADO VERDE
+      // 4. DESENHA O RASTRO
       canvasCtx.beginPath();
       canvasCtx.lineWidth = 6;
       canvasCtx.lineCap = "round";
-      canvasCtx.strokeStyle = "#00FF00";
+      canvasCtx.strokeStyle = "#00ffff";
+      canvasCtx.shadowBlur = 15;
+      canvasCtx.shadowColor = "#00ffff";
+
       for (let i = 1; i < points.length; i++) {
         if (points[i] && points[i-1]) {
           canvasCtx.moveTo(points[i-1].x, points[i-1].y);
@@ -165,14 +164,14 @@
     }
 
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.5 });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
-    let lastH = {};
-    hands.onResults(h => lastH = h);
-    faceMesh.onResults(f => onResults(lastH, f));
+    let latestHandResults = {};
+    hands.onResults(results => { latestHandResults = results; });
+    faceMesh.onResults(results => { onResults(latestHandResults, results); });
 
     const camera = new Camera(videoElement, {
       onFrame: async () => {
@@ -185,7 +184,8 @@
 
     window.addEventListener('keydown', (e) => { 
         if(e.code === 'Space') {
-            points = []; currentPass = "";
+            points = [];
+            currentPass = "";
             document.getElementById('pass-display').innerText = "____";
             keys.forEach(k => k.hits = 0);
         }

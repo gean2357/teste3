@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Air Draw - Face Mesh & Hand Tracking</title>
+  <title>Air Draw - Secure Login</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { position: absolute; top: 0; left: 0; }
@@ -15,10 +15,10 @@
 </head>
 <body>
   <div id="ui">
-    <b>Dennis, teste os novos recursos:</b><br>
-    👉 <b>Desenhar:</b> Una o polegar e o indicador (Pinça)<br>
-    🖐️ <b>Parar:</b> Afaste os dedos ou feche a mão<br>
-    ⌨️ <b>Espaço:</b> Limpa o desenho
+    <b>Dennis - Acesso Restrito</b><br>
+    👉 Passe o indicador 2x sobre os números<br>
+    🔒 Senha: <span id="pass-display">____</span><br>
+    ⌨️ Espaço: Limpa tudo
   </div>
   <video id="webcam" autoplay playsinline style="display:none;"></video>
   <canvas id="output_canvas"></canvas>
@@ -34,10 +34,21 @@
     const canvasCtx = canvasElement.getContext('2d');
     
     let points = []; 
+    let currentPass = "";
+    const targetPass = "0001";
 
-    // Função para calcular distância entre dois pontos
-    function getDistance(p1, p2) {
-      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    // Configuração do Teclado
+    const keys = [];
+    const keyWidth = 60;
+    const keyHeight = 60;
+    for(let i=0; i<10; i++) {
+        keys.push({
+            label: i.toString(),
+            x: 50 + (i * 70),
+            y: 100,
+            hits: 0,
+            lastHitTime: 0
+        });
     }
 
     function onResults(handResults, faceResults) {
@@ -46,78 +57,85 @@
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      
       canvasCtx.translate(canvasElement.width, 0);
       canvasCtx.scale(-1, 1);
       
-      // Desenha o vídeo
       if (handResults.image) {
         canvasCtx.drawImage(handResults.image, 0, 0, canvasElement.width, canvasElement.height);
       }
 
-      // 1. DESENHA O ROSTO (FACE MESH)
+      // 1. DESENHA O ROSTO
       if (faceResults && faceResults.multiFaceLandmarks) {
         for (const landmarks of faceResults.multiFaceLandmarks) {
-          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#FF3030'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#FF3030'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#E0E0E0'});
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#E0E0E0'});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C030', lineWidth: 1});
         }
       }
 
-      // 2. DESENHA A MÃO E LÓGICA DE PINÇA
+      // 2. DESENHA O TECLADO VIRTUAL
+      keys.forEach(key => {
+          canvasCtx.fillStyle = key.hits > 0 ? "rgba(0, 255, 255, 0.5)" : "rgba(255, 255, 255, 0.2)";
+          canvasCtx.strokeStyle = "#00ffff";
+          canvasCtx.lineWidth = 2;
+          canvasCtx.fillRect(key.x, key.y, keyWidth, keyHeight);
+          canvasCtx.strokeRect(key.x, key.y, keyWidth, keyHeight);
+          
+          canvasCtx.save();
+          canvasCtx.scale(-1, 1);
+          canvasCtx.fillStyle = "white";
+          canvasCtx.font = "20px Arial";
+          canvasCtx.fillText(key.label, -(key.x + 35), key.y + 40);
+          canvasCtx.restore();
+      });
+
+      // 3. LOGICA DA MÃO E COLISÃO
       if (handResults.multiHandLandmarks) {
         for (const landmarks of handResults.multiHandLandmarks) {
           drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
 
-          const thumbTip = landmarks[4];
           const indexTip = landmarks[8];
-          
-          const distance = getDistance(thumbTip, indexTip);
+          const x = indexTip.x * canvasElement.width;
+          const y = indexTip.y * canvasElement.height;
 
-          // Se a distância for pequena (pinça), adiciona ponto ao desenho
-          if (distance < 0.05) {
-            const x = indexTip.x * canvasElement.width;
-            const y = indexTip.y * canvasElement.height;
-            points.push({x, y});
-          } else {
-            // Adiciona um ponto nulo para criar quebras no traçado quando soltar os dedos
-            if (points.length > 0 && points[points.length-1] !== null) {
-              points.push(null);
-            }
-          }
+          // Verifica colisão com teclas
+          keys.forEach(key => {
+              if (x > key.x && x < key.x + keyWidth && y > key.y && y < key.y + keyHeight) {
+                  const now = Date.now();
+                  // Evita registrar múltiplos toques no mesmo milissegundo
+                  if (now - key.lastHitTime > 500) { 
+                      key.hits++;
+                      key.lastHitTime = now;
+                      
+                      if (key.hits >= 2) { // Movimentou 2 vezes
+                          currentPass += key.label;
+                          document.getElementById('pass-display').innerText = "*".repeat(currentPass.length);
+                          key.hits = 0; // Reseta a tecla
+                          
+                          // Verifica senha
+                          if (currentPass.length === 4) {
+                              if (currentPass === targetPass) {
+                                  window.location.href = "https://www.youtube.com";
+                              } else {
+                                  currentPass = "";
+                                  document.getElementById('pass-display').innerText = "ERRO";
+                                  setTimeout(() => document.getElementById('pass-display').innerText = "____", 1000);
+                              }
+                          }
+                      }
+                  }
+              }
+          });
         }
       }
 
-      // 3. DESENHA O RASTRO (Sem ligar pontos nulos)
-      canvasCtx.beginPath();
-      canvasCtx.lineWidth = 6;
-      canvasCtx.lineCap = "round";
-      canvasCtx.strokeStyle = "#00ffff";
-      canvasCtx.shadowBlur = 15;
-      canvasCtx.shadowColor = "#00ffff";
-
-      for (let i = 1; i < points.length; i++) {
-        if (points[i] && points[i-1]) {
-          canvasCtx.moveTo(points[i-1].x, points[i-1].y);
-          canvasCtx.lineTo(points[i].x, points[i].y);
-        }
-      }
-      canvasCtx.stroke();
-      
       canvasCtx.restore();
     }
 
-    // Configuração do Face Mesh
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
 
-    // Configuração das Mãos
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
 
-    // Sincronização dos resultados
     let latestHandResults = {};
     hands.onResults(results => { latestHandResults = results; });
     faceMesh.onResults(results => { onResults(latestHandResults, results); });
@@ -131,7 +149,13 @@
     });
     camera.start();
 
-    window.addEventListener('keydown', (e) => { if(e.code === 'Space') points = []; });
+    window.addEventListener('keydown', (e) => { 
+        if(e.code === 'Space') {
+            currentPass = "";
+            document.getElementById('pass-display').innerText = "____";
+            keys.forEach(k => k.hits = 0);
+        }
+    });
   </script>
 </body>
 </html>

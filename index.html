@@ -17,7 +17,7 @@
 <body>
   <div id="ui">
     <b>Dennis - Acesso Restrito</b><br>
-    👉 Passe o indicador 2x sobre os números<br>
+    👉 Passe o indicador 2x sobre os números (Rodapé)<br>
     🔒 Senha: <span id="pass-display">____</span><br>
     ⌨️ Espaço: Limpa o desenho e a senha
   </div>
@@ -38,15 +38,14 @@
     let currentPass = "";
     const targetPass = "0001";
 
-    // Configuração do Teclado Virtual (Números 0-9)
+    // Configuração do Teclado Virtual Redondo
     const keys = [];
-    const keyWidth = 60;
-    const keyHeight = 60;
+    const radius = 30; // Raio do botão redondo
     for(let i=0; i<10; i++) {
         keys.push({
             label: i.toString(),
-            x: 50 + (i * 75),
-            y: 50,
+            x: 0, // Será calculado no onResults para centralizar
+            y: 0,
             hits: 0,
             lastHitTime: 0
         });
@@ -69,7 +68,7 @@
         canvasCtx.drawImage(handResults.image, 0, 0, canvasElement.width, canvasElement.height);
       }
 
-      // 1. DESENHA A FACE (A estética que você gosta)
+      // 1. DESENHA A FACE
       if (faceResults && faceResults.multiFaceLandmarks) {
         for (const landmarks of faceResults.multiFaceLandmarks) {
           drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
@@ -80,23 +79,33 @@
         }
       }
 
-      // 2. DESENHA O TECLADO
-      keys.forEach(key => {
+      // 2. DESENHA O TECLADO REDONDO NO RODAPÉ
+      keys.forEach((key, i) => {
+          // Centraliza os botões no rodapé
+          const spacing = 75;
+          const totalWidth = spacing * 9;
+          key.x = (canvasElement.width / 2) - (totalWidth / 2) + (i * spacing);
+          key.y = canvasElement.height - 70; // 70 pixels acima do fundo
+
+          canvasCtx.beginPath();
+          canvasCtx.arc(key.x, key.y, radius, 0, 2 * Math.PI);
           canvasCtx.fillStyle = key.hits > 0 ? "rgba(0, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)";
           canvasCtx.strokeStyle = "#00ffff";
           canvasCtx.lineWidth = 2;
-          canvasCtx.fillRect(key.x, key.y, keyWidth, keyHeight);
-          canvasCtx.strokeRect(key.x, key.y, keyWidth, keyHeight);
+          canvasCtx.fill();
+          canvasCtx.stroke();
           
           canvasCtx.save();
           canvasCtx.scale(-1, 1);
           canvasCtx.fillStyle = "white";
           canvasCtx.font = "bold 24px Arial";
-          canvasCtx.fillText(key.label, -(key.x + 38), key.y + 40);
+          canvasCtx.textAlign = "center";
+          // Inverte o X do texto por causa do scale(-1, 1) global
+          canvasCtx.fillText(key.label, -key.x, key.y + 8);
           canvasCtx.restore();
       });
 
-      // 3. DESENHA A MÃO E LÓGICA DE SENHA/DESENHO
+      // 3. DESENHA A MÃO E LÓGICA
       if (handResults.multiHandLandmarks) {
         for (const landmarks of handResults.multiHandLandmarks) {
           drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
@@ -106,9 +115,10 @@
           const x = indexTip.x * canvasElement.width;
           const y = indexTip.y * canvasElement.height;
           
-          // Lógica de Colisão com Teclado (2 movimentos)
+          // Lógica de Colisão com Círculos
           keys.forEach(key => {
-              if (x > key.x && x < key.x + keyWidth && y > key.y && y < key.y + keyHeight) {
+              const distToButton = Math.sqrt(Math.pow(x - key.x, 2) + Math.pow(y - key.y, 2));
+              if (distToButton < radius) {
                   const now = Date.now();
                   if (now - key.lastHitTime > 600) { 
                       key.hits++;
@@ -133,14 +143,11 @@
               }
           });
 
-          // Lógica de Desenho (Pinça)
           const distance = getDistance(thumbTip, indexTip);
           if (distance < 0.05) {
             points.push({x, y});
-          } else {
-            if (points.length > 0 && points[points.length-1] !== null) {
-              points.push(null);
-            }
+          } else if (points.length > 0 && points[points.length-1] !== null) {
+            points.push(null);
           }
         }
       }

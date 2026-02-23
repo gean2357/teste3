@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Air Draw - Hand Skeleton</title>
+  <title>Air Draw - Face Mesh & Hand Tracking</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { position: absolute; top: 0; left: 0; }
@@ -15,14 +15,16 @@
 </head>
 <body>
   <div id="ui">
-    <b>Status:</b> Mostrando Esqueleto da Mão<br>
-    <b>Dedo Indicador:</b> Desenha no ar<br>
-    <b>Espaço:</b> Limpa o desenho
+    <b>Dennis, teste os novos recursos:</b><br>
+    👉 <b>Desenhar:</b> Una o polegar e o indicador (Pinça)<br>
+    🖐️ <b>Parar:</b> Afaste os dedos ou feche a mão<br>
+    ⌨️ <b>Espaço:</b> Limpa o desenho
   </div>
   <video id="webcam" autoplay playsinline style="display:none;"></video>
   <canvas id="output_canvas"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
@@ -33,80 +35,103 @@
     
     let points = []; 
 
-    function onResults(results) {
+    // Função para calcular distância entre dois pontos
+    function getDistance(p1, p2) {
+      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    }
+
+    function onResults(handResults, faceResults) {
       canvasElement.width = window.innerWidth;
       canvasElement.height = window.innerHeight;
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       
-      // Espelhamento para parecer um espelho
       canvasCtx.translate(canvasElement.width, 0);
       canvasCtx.scale(-1, 1);
       
-      // Desenha o vídeo no fundo
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      // Desenha o vídeo
+      if (handResults.image) {
+        canvasCtx.drawImage(handResults.image, 0, 0, canvasElement.width, canvasElement.height);
+      }
 
-      if (results.multiHandLandmarks) {
-        for (const landmarks of results.multiHandLandmarks) {
-          
-          // 1. DESENHA O ESQUELETO (Linhas e Pontos)
-          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS,
-                        {color: '#00FF00', lineWidth: 5});
-          drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
-
-          // 2. LOGICA DO DESENHO (Dedo Indicador - Ponto 8)
-          const indexTip = landmarks[8];
-          const x = indexTip.x * canvasElement.width;
-          const y = indexTip.y * canvasElement.height;
-          points.push({x, y});
+      // 1. DESENHA O ROSTO (FACE MESH)
+      if (faceResults && faceResults.multiFaceLandmarks) {
+        for (const landmarks of faceResults.multiFaceLandmarks) {
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#FF3030'});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#FF3030'});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#E0E0E0'});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#E0E0E0'});
         }
       }
 
-      // 3. DESENHA O RASTRO ACUMULADO (Azul Neon)
-      if (points.length > 1) {
-        canvasCtx.beginPath();
-        canvasCtx.lineWidth = 8;
-        canvasCtx.lineCap = "round";
-        canvasCtx.strokeStyle = "#00BFFF";
-        canvasCtx.shadowBlur = 15;
-        canvasCtx.shadowColor = "#00BFFF";
+      // 2. DESENHA A MÃO E LÓGICA DE PINÇA
+      if (handResults.multiHandLandmarks) {
+        for (const landmarks of handResults.multiHandLandmarks) {
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
 
-        for (let i = 1; i < points.length; i++) {
+          const thumbTip = landmarks[4];
+          const indexTip = landmarks[8];
+          
+          const distance = getDistance(thumbTip, indexTip);
+
+          // Se a distância for pequena (pinça), adiciona ponto ao desenho
+          if (distance < 0.05) {
+            const x = indexTip.x * canvasElement.width;
+            const y = indexTip.y * canvasElement.height;
+            points.push({x, y});
+          } else {
+            // Adiciona um ponto nulo para criar quebras no traçado quando soltar os dedos
+            if (points.length > 0 && points[points.length-1] !== null) {
+              points.push(null);
+            }
+          }
+        }
+      }
+
+      // 3. DESENHA O RASTRO (Sem ligar pontos nulos)
+      canvasCtx.beginPath();
+      canvasCtx.lineWidth = 6;
+      canvasCtx.lineCap = "round";
+      canvasCtx.strokeStyle = "#00ffff";
+      canvasCtx.shadowBlur = 15;
+      canvasCtx.shadowColor = "#00ffff";
+
+      for (let i = 1; i < points.length; i++) {
+        if (points[i] && points[i-1]) {
           canvasCtx.moveTo(points[i-1].x, points[i-1].y);
           canvasCtx.lineTo(points[i].x, points[i].y);
         }
-        canvasCtx.stroke();
       }
+      canvasCtx.stroke();
       
       canvasCtx.restore();
     }
 
-    window.addEventListener('keydown', (e) => {
-      if(e.code === 'Space') points = [];
-    });
+    // Configuração do Face Mesh
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-    });
+    // Configuração das Mãos
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
-    hands.setOptions({
-      maxNumHands: 2, // Agora detecta até 2 mãos
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    hands.onResults(onResults);
+    // Sincronização dos resultados
+    let latestHandResults = {};
+    hands.onResults(results => { latestHandResults = results; });
+    faceMesh.onResults(results => { onResults(latestHandResults, results); });
 
     const camera = new Camera(videoElement, {
       onFrame: async () => {
         await hands.send({image: videoElement});
+        await faceMesh.send({image: videoElement});
       },
-      width: 1280,
-      height: 720
+      width: 1280, height: 720
     });
     camera.start();
+
+    window.addEventListener('keydown', (e) => { if(e.code === 'Space') points = []; });
   </script>
 </body>
 </html>

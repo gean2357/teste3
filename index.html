@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Air Draw - Dennis Login Corrigido</title>
+  <title>Dennis Vision - Login Biométrico</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { position: absolute; top: 0; left: 0; }
@@ -11,14 +11,13 @@
       color: white; font-family: sans-serif; z-index: 10;
       background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
     }
-    #pass-display { color: #00FF00; font-weight: bold; font-size: 24px; }
   </style>
 </head>
 <body>
   <div id="ui">
     <b>Dennis - Login Biométrico</b><br>
     👉 Passe o indicador 2x sobre os círculos verdes<br>
-    🔒 Senha: <span id="pass-display">____</span><br>
+    🔒 Senha: <span id="pass-display" style="color:#00FF00">____</span><br>
     ⌨️ Espaço: Limpa tudo
   </div>
   <video id="webcam" autoplay playsinline style="display:none;"></video>
@@ -37,19 +36,16 @@
     let points = []; 
     let currentPass = "";
     const targetPass = "0001";
-
     const keys = [];
-    const radius = 45; 
-    
-    for(let i=0; i<10; i++) {
-        keys.push({ label: i.toString(), hits: 0, lastHitTime: 0, x: 0, y: 0 });
-    }
+    const radius = 50; // Grandes como você pediu
 
-    function getDistance(p1, p2) {
-      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    // Inicializa botões
+    for(let i=0; i<10; i++) {
+        keys.push({ label: i.toString(), hits: 0, lastHitTime: 0 });
     }
 
     function onResults(handResults, faceResults) {
+      // Ajusta tela
       canvasElement.width = window.innerWidth;
       canvasElement.height = window.innerHeight;
       const w = canvasElement.width;
@@ -58,16 +54,15 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, w, h);
       
-      // ESPELHAMENTO
+      // 1. ESPELHAMENTO E DESENHO DA CÂMERA (FUNDO)
       canvasCtx.translate(w, 0);
       canvasCtx.scale(-1, 1);
       
-      // DESENHA O VÍDEO NO FUNDO (Importante para não ficar preto)
       if (handResults.image) {
         canvasCtx.drawImage(handResults.image, 0, 0, w, h);
       }
 
-      // 1. DESENHA A FACE (Estética Dennis)
+      // 2. DESENHA A FACE (A que você acha bonita)
       if (faceResults && faceResults.multiFaceLandmarks) {
         for (const landmarks of faceResults.multiFaceLandmarks) {
           drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
@@ -78,32 +73,37 @@
         }
       }
 
-      // 2. DESENHA O TECLADO REDONDO (CENTRALIZADO EM BAIXO)
+      // 3. DESENHA O TECLADO VERDE REDONDO (CENTRALIZADO EM BAIXO)
       keys.forEach((key, i) => {
           const row = Math.floor(i / 5);
           const col = i % 5;
-          key.x = (w / 2) - (2 * 110) + (col * 110);
-          key.y = (h / 2) + 100 + (row * 110);
+          // Cálculo para centralizar 5 círculos por linha
+          const startX = w / 2 - (2 * 120);
+          const x = startX + (col * 120);
+          const y = h - 250 + (row * 120); // Posicionado na parte de baixo
+
+          key.x = x;
+          key.y = y;
 
           canvasCtx.beginPath();
-          canvasCtx.arc(key.x, key.y, radius, 0, 2 * Math.PI);
+          canvasCtx.arc(x, y, radius, 0, 2 * Math.PI);
           canvasCtx.fillStyle = key.hits > 0 ? "rgba(0, 255, 0, 0.6)" : "rgba(0, 255, 0, 0.2)";
           canvasCtx.strokeStyle = "#00FF00";
-          canvasCtx.lineWidth = 3;
+          canvasCtx.lineWidth = 4;
           canvasCtx.fill();
           canvasCtx.stroke();
           
-          // Texto do número
+          // Números
           canvasCtx.save();
           canvasCtx.scale(-1, 1);
           canvasCtx.fillStyle = "white";
-          canvasCtx.font = "bold 30px Arial";
+          canvasCtx.font = "bold 35px Arial";
           canvasCtx.textAlign = "center";
-          canvasCtx.fillText(key.label, -key.x, key.y + 10);
+          canvasCtx.fillText(key.label, -x, y + 12);
           canvasCtx.restore();
       });
 
-      // 3. LOGICA DA MÃO
+      // 4. LÓGICA DAS MÃOS
       if (handResults.multiHandLandmarks) {
         for (const landmarks of handResults.multiHandLandmarks) {
           drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
@@ -112,9 +112,10 @@
           const x = indexTip.x * w;
           const y = indexTip.y * h;
           
+          // Colisão com botões (2 passagens)
           keys.forEach(key => {
-              const distToKey = Math.sqrt(Math.pow(x - key.x, 2) + Math.pow(y - key.y, 2));
-              if (distToKey < radius) {
+              const dist = Math.hypot(x - key.x, y - key.y);
+              if (dist < radius) {
                   const now = Date.now();
                   if (now - key.lastHitTime > 700) { 
                       key.hits++;
@@ -137,9 +138,10 @@
               }
           });
 
-          // Desenho (Pinça)
+          // Rastro do Desenho (Pinça)
           const thumbTip = landmarks[4];
-          if (getDistance(thumbTip, indexTip) < 0.05) {
+          const d = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+          if (d < 0.05) {
             points.push({x, y});
           } else if (points.length > 0 && points[points.length-1] !== null) {
             points.push(null);
@@ -147,7 +149,7 @@
         }
       }
 
-      // 4. DESENHA O RASTRO DO DESENHO
+      // 5. DESENHA O TRAÇADO VERDE
       canvasCtx.beginPath();
       canvasCtx.lineWidth = 6;
       canvasCtx.lineCap = "round";
@@ -168,9 +170,9 @@
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
     hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.5 });
 
-    let latestHandResults = {};
-    hands.onResults(results => { latestHandResults = results; });
-    faceMesh.onResults(results => { onResults(latestHandResults, results); });
+    let lastH = {};
+    hands.onResults(h => lastH = h);
+    faceMesh.onResults(f => onResults(lastH, f));
 
     const camera = new Camera(videoElement, {
       onFrame: async () => {
